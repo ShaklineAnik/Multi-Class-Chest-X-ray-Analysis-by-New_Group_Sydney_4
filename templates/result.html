@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+    <span class="section-num">§ 03 / RESULTS</span>
+    <p class="paper-tag">Output · inference report</p>
+    <h2>Inference report</h2>
+
+    {% if not model_loaded %}
+        <p class="status warning">Real prediction was not performed because the trained model file is missing.</p>
+        <img class="preview-img" src="{{ uploaded_image }}" alt="Uploaded X-ray" style="margin-top:18px" />
+        <a class="button-link button-ghost" href="{{ url_for('index') }}" style="margin-top:20px">← Back</a>
+    {% else %}
+        <div class="result-grid" style="margin-top:18px">
+            <div class="image-card">
+                <h3>Input radiograph</h3>
+                <img src="{{ uploaded_image }}" alt="Uploaded X-ray" />
+            </div>
+            <div class="image-card">
+                <h3>Grad-CAM saliency</h3>
+                <img src="{{ gradcam_image }}" alt="Grad-CAM heatmap" />
+            </div>
+        </div>
+
+        <div class="prediction-card">
+            <p class="paper-tag">Predicted class</p>
+            <h2>{{ prediction.pred_class }}</h2>
+            <p class="confidence-line">
+                Confidence · <strong>{{ "%.2f"|format(prediction.confidence_percent) }}%</strong> · top-1 softmax
+            </p>
+        </div>
+
+        <div class="panel" style="margin-top:24px;background:var(--paper)">
+            <span class="section-num">§ 03.1 / DISTRIBUTION</span>
+            <h2>Class probability distribution</h2>
+            <table>
+                <thead>
+                    <tr><th>Class</th><th>P(class)</th><th>Visual</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in prediction.probabilities %}
+                    <tr>
+                        <td>{{ item.class_name }}</td>
+                        <td>{{ "%.2f"|format(item.percentage) }}%</td>
+                        <td><div class="bar-bg"><div class="bar-fill" style="width: {{ item.percentage }}%"></div></div></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="panel" style="margin-top:18px;background:var(--paper)">
+            <span class="section-num">§ 03.2 / RATIONALE</span>
+            <h2>Generated radiology rationale</h2>
+            <div class="chat-thread">
+                <div class="chat-msg">
+                    <div class="chat-avatar user">YOU</div>
+                    <div class="chat-bubble user-bubble">
+                        <div class="chat-meta">Query</div>
+                        Explain the prediction for the uploaded chest X-ray and the Grad-CAM evidence.
+                    </div>
+                </div>
+                <div class="chat-msg">
+                    <div class="chat-avatar bot">AI</div>
+                    <div class="chat-bubble">
+                        <div class="chat-meta">CXR-Net · radiology assistant</div>
+                        {{ explanation }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p class="disclaimer">
+            This system is for research and decision-support demonstration only. Not a substitute for professional medical diagnosis.
+        </p>
+
+        <a class="button-link" href="{{ url_for('index') }}" style="margin-top:20px">← Analyze another image</a>
+    {% endif %}
+</section>
+{% endblock %}

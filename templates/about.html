@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <p class="paper-tag">Methods · system architecture</p>
+    <h1>How <em>CXR-Net</em> reaches its prediction.</h1>
+    <p class="subtitle">
+        A short description of the pipeline, the model, and the explanation module that
+        sits on top of the EfficientNetV2-S backbone.
+    </p>
+</section>
+
+<section class="panel">
+    <span class="section-num">§ A / PIPELINE</span>
+    <h2>End-to-end stages</h2>
+    <ol>
+        <li>Upload chest radiograph (PNG / JPG / BMP / WEBP).</li>
+        <li>Convert to grayscale and resize to 224 × 224.</li>
+        <li>Forward pass through EfficientNetV2-S backbone.</li>
+        <li>Softmax over four class logits → probability vector.</li>
+        <li>Grad-CAM over the final convolutional block → saliency overlay.</li>
+        <li>Rationale module produces a natural-language explanation.</li>
+    </ol>
+</section>
+
+<section class="panel">
+    <span class="section-num">§ B / RESULTS</span>
+    <h2>Reported performance</h2>
+    <div class="metrics-grid">
+        <div class="metric-card"><span>Test Accuracy</span><strong>95.92<small style="font-size:18px;color:var(--muted)">%</small></strong></div>
+        <div class="metric-card"><span>Macro F1</span><strong>96.74<small style="font-size:18px;color:var(--muted)">%</small></strong></div>
+        <div class="metric-card"><span>Test Images</span><strong>2,233</strong></div>
+        <div class="metric-card"><span>Classes</span><strong>4</strong></div>
+    </div>
+</section>
+
+<section class="panel">
+    <span class="section-num">§ C / NOTES</span>
+    <h2>Scope &amp; limitations</h2>
+    <p>
+        The model was trained on a curated chest X-ray dataset spanning COVID-19,
+        lung opacity, normal, and viral pneumonia classes. Off-distribution images
+        (lateral views, pediatric studies, post-operative findings, foreign bodies)
+        are <em>out of scope</em> and predictions on such inputs should not be trusted.
+    </p>
+    <p class="disclaimer">
+        Research demonstration only · not a medical device · not a substitute for radiological review.
+    </p>
+</section>
+{% endblock %}

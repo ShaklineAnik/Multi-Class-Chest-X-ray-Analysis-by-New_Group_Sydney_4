@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CXR-Net · Explainable Chest X-ray Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+    <nav class="navbar">
+        <div class="brand">
+            <span class="brand-mark">CXR</span>
+            <span>CXR-Net</span>
+            <span class="brand-meta">v1.0 · research preview</span>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('index') }}">01 · Analyze</a>
+            <a href="{{ url_for('about') }}">02 · Method</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="alert">
+                    {% for message in messages %}
+                        <p>{{ message }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+
+        <p class="footnote">
+            CXR-Net · EfficientNetV2-S · Grad-CAM · Generated explanations · Research preview
+        </p>
+    </main>
+</body>
+</html>

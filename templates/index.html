@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <p class="paper-tag">Preprint ·cxr-net.2026 · Open Research</p>
+    <h1>Integrating Modern Deep Vision Models and Large Language Models for Explainable Multi-Class Chest X-ray Analysis .</h1>
+    <p class="subtitle">
+        Upload a chest X-ray. The system returns a class prediction with calibrated
+        probabilities, a Grad-CAM saliency map highlighting the regions that drove the
+        decision, and a generated natural-language rationale written in the voice of a
+        radiology assistant.
+    </p>
+
+    <div class="author-line">
+        <span><strong>Backbone</strong> · EfficientNetV2-S</span>
+        <span><strong>Interpretability</strong> · Grad-CAM</span>
+        <span><strong>Explanation</strong> · LLM-style</span>
+        <span><strong>Domain</strong> · Thoracic imaging</span>
+    </div>
+
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <span>Test Accuracy</span>
+            <strong>95.92<small style="font-size:18px;color:var(--muted)">%</small></strong>
+        </div>
+        <div class="metric-card">
+            <span>Macro F1</span>
+            <strong>96.74<small style="font-size:18px;color:var(--muted)">%</small></strong>
+        </div>
+        <div class="metric-card">
+            <span>Test Images</span>
+            <strong>2,233</strong>
+        </div>
+        <div class="metric-card">
+            <span>Classes</span>
+            <strong>4</strong>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <span class="section-num">§ 01 / INPUT</span>
+    <h2>Submit a radiograph</h2>
+    <p class="panel-lead">
+        Provide a single anterior-posterior chest X-ray image. Inference is performed
+        client-side via a local Flask endpoint &mdash; nothing is uploaded to third parties.
+    </p>
+
+    {% if model_loaded %}
+        <p class="status good">Weights loaded · <code>models/best_model.pt</code></p>
+    {% else %}
+        <p class="status warning">
+            Model file missing &mdash; place trained <code>best_model.pt</code> inside <code>models/</code> to enable real inference.
+        </p>
+    {% endif %}
+
+    <form id="upload-form" action="{{ url_for('predict') }}" method="POST" enctype="multipart/form-data">
+        <label class="upload-zone" id="drop-zone">
+            <div class="upload-icon">+</div>
+            <p><strong>Drop a chest X-ray here</strong> or click to browse</p>
+            <p class="file-hint">PNG · JPG · JPEG · BMP · WEBP</p>
+            <input type="file" name="image" id="file-input" accept="image/*" required />
+        </label>
+
+        <div class="upload-actions">
+            <span class="file-name" id="file-name">No file selected</span>
+            <button type="submit" id="analyze-btn">
+                <span>Run Inference</span>
+                <span aria-hidden="true">→</span>
+            </button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <span class="section-num">§ 02 / TAXONOMY</span>
+    <h2>Diagnostic classes</h2>
+    <p class="panel-lead">
+        The network discriminates between four common radiographic findings using a softmax head over 4 logits.
+    </p>
+    <div class="class-tags">
+        {% for class_name in class_names %}
+            <span>{{ class_name }}</span>
+        {% endfor %}
+    </div>
+</section>
+
+<div id="result-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+        <div id="modal-body"></div>
+    </div>
+</div>
+
+<div id="loading-overlay" class="modal-overlay" aria-hidden="true">
+    <div class="loading-box">
+        <div class="spinner"></div>
+        <p>Running inference · Grad-CAM · explanation…</p>
+    </div>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById("upload-form");
+    const fileInput = document.getElementById("file-input");
+    const fileName = document.getElementById("file-name");
+    const dropZone = document.getElementById("drop-zone");
+    const modal = document.getElementById("result-modal");
+    const modalBody = document.getElementById("modal-body");
+    const modalClose = document.getElementById("modal-close");
+    const loading = document.getElementById("loading-overlay");
+    const predictUrl = "{{ url_for('predict_json') }}";
+
+    /* ----- File handling ----- */
+    fileInput.addEventListener("change", () => {
+        fileName.textContent = fileInput.files[0] ? fileInput.files[0].name : "No file selected";
+    });
+
+    ["dragenter", "dragover"].forEach(evt =>
+        dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add("dragover"); })
+    );
+    ["dragleave", "drop"].forEach(evt =>
+        dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove("dragover"); })
+    );
+    dropZone.addEventListener("drop", e => {
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            fileName.textContent = fileInput.files[0].name;
+        }
+    });
+
+    /* ----- Modal ----- */
+    function openModal() {
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+    }
+    function closeModal() {
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
+        modalBody.innerHTML = "";
+        document.body.style.overflow = "";
+    }
+    function showLoading(on) {
+        loading.classList.toggle("open", on);
+        loading.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        }[c]));
+    }
+
+    /* ----- Typewriter effect ----- */
+    function typeInto(element, text, speed = 12) {
+        return new Promise(resolve => {
+            element.innerHTML = '<span class="typed"></span><span class="cursor"></span>';
+            const typed = element.querySelector(".typed");
+            const cursor = element.querySelector(".cursor");
+            const host = element.closest(".chat-host");
+            let i = 0;
+            function tick() {
+                if (i >= text.length) {
+                    cursor.remove();
+                    resolve();
+                    return;
+                }
+                const ch = text[i];
+                typed.textContent += ch;
+                i++;
+                if (host) host.scrollTop = host.scrollHeight;
+                const delay = ch === "." || ch === "!" || ch === "?" ? speed * 8
+                            : ch === "," || ch === ";" ? speed * 4
+                            : speed + Math.random() * 18;
+                setTimeout(tick, delay);
+            }
+            tick();
+        });
+    }
+
+    /* ----- Render result ----- */
+    function renderResult(data) {
+        if (!data.ok) {
+            modalBody.innerHTML = `
+                <span class="paper-tag">Result · error</span>
+                <h2 id="modal-title">Inference unavailable</h2>
+                <p class="status warning">${escapeHtml(data.error || "Prediction not available.")}</p>
+                ${data.uploaded_image ? `<img class="preview-img" src="${data.uploaded_image}" alt="Uploaded X-ray" style="margin-top:18px" />` : ""}
+            `;
+            return;
+        }
+
+        const p = data.prediction;
+        const rows = p.probabilities.map(item => `
+            <tr>
+                <td>${escapeHtml(item.class_name)}</td>
+                <td>${item.percentage.toFixed(2)}%</td>
+                <td><div class="bar-bg"><div class="bar-fill" style="width:0%" data-target="${item.percentage}"></div></div></td>
+            </tr>
+        `).join("");
+
+        modalBody.innerHTML = `
+            <div class="modal-head">
+                <span class="paper-tag">Output · §03 results</span>
+                <h2 id="modal-title">Inference report</h2>
+            </div>
+
+            <div class="modal-grid">
+                <div class="modal-col left">
+                    <div class="image-pair">
+                        <div class="image-card">
+                            <h3>Input</h3>
+                            <img src="${data.uploaded_image}" alt="Uploaded X-ray" />
+                        </div>
+                        <div class="image-card">
+                            <h3>Grad-CAM</h3>
+                            <img src="${data.gradcam_image}" alt="Grad-CAM heatmap" />
+                        </div>
+                    </div>
+
+                    <div class="prediction-card">
+                        <p class="paper-tag">Predicted class</p>
+                        <h2>${escapeHtml(p.pred_class)}</h2>
+                        <p class="confidence-line">Confidence · <strong>${p.confidence_percent.toFixed(2)}%</strong> · top-1 softmax</p>
+                    </div>
+
+                    <div class="panel" style="background:var(--paper)">
+                        <span class="section-num">§ 03.1</span>
+                        <h2>Probability distribution</h2>
+                        <table>
+                            <thead><tr><th>Class</th><th>P</th><th>Visual</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="modal-col right">
+                    <div class="panel" style="background:var(--paper)">
+                        <span class="section-num">§ 03.2</span>
+                        <h2>AI radiology rationale</h2>
+                        <div class="chat-host">
+                            <div class="chat-thread">
+                                <div class="chat-msg">
+                                    <div class="chat-avatar user">YOU</div>
+                                    <div class="chat-bubble user-bubble">
+                                        <div class="chat-meta">Query</div>
+                                        Explain the prediction for the uploaded chest X-ray and the Grad-CAM evidence.
+                                    </div>
+                                </div>
+                                <div class="chat-msg">
+                                    <div class="chat-avatar bot">AI</div>
+                                    <div class="chat-bubble" id="bot-bubble">
+                                        <div class="chat-meta">CXR-Net · radiology assistant</div>
+                                        <div id="bot-text"><div class="thinking-dots"><span></span><span></span><span></span></div></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="disclaimer">Research demonstration only · not a medical diagnosis.</p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Animate probability bars
+        requestAnimationFrame(() => {
+            modalBody.querySelectorAll(".bar-fill").forEach(b => {
+                b.style.width = b.dataset.target + "%";
+            });
+        });
+
+        // Run thinking-dots briefly, then type the explanation
+        const botText = modalBody.querySelector("#bot-text");
+        setTimeout(() => {
+            botText.innerHTML = "";
+            typeInto(botText, data.explanation, 10);
+        }, 700);
+    }
+
+    /* ----- Submit ----- */
+    form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        if (!fileInput.files.length) return;
+        const fd = new FormData(form);
+        showLoading(true);
+        try {
+            const res = await fetch(predictUrl, { method: "POST", body: fd });
+            const data = await res.json();
+            renderResult(data);
+            openModal();
+        } catch (err) {
+            modalBody.innerHTML = `<h2>Inference failed</h2><p class="status warning">${escapeHtml(err.message)}</p>`;
+            openModal();
+        } finally {
+            showLoading(false);
+        }
+    });
+
+    modalClose.addEventListener("click", closeModal);
+    modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+})();
+</script>
+{% endblock %}
